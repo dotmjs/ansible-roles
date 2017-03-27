@@ -1,0 +1,116 @@
+- name: Copy install ISO to libvirt host
+  copy: src="{{ iso }}" dest="{{ libvirt_storage_dir }}" owner=qemu group=qemu mode=0644
+  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+
+- block: #Create Kickstart ISO
+
+  - name: Create working directory
+    file: state=directory path="{{ libvirt_storage_dir }}/{{ inventory_hostname }}.ks.d"
+
+  - name: Create kickstart file
+    template: dest="{{ libvirt_storage_dir }}/{{ inventory_hostname }}.ks.d/ks.cfg" src=ks.cfg.j2
+
+  - name: Create KS ISO for each host
+    command: mkisofs -VOEMDRV -o {{ libvirt_storage_dir }}/{{ inventory_hostname }}.ks.iso {{ libvirt_storage_dir }}/{{ inventory_hostname }}.ks.d/.
+    args:
+      creates: "{{ libvirt_storage_dir }}/{{ inventory_hostname }}.ks.iso"
+
+  - file: state=file path="{{ libvirt_storage_dir }}/{{ inventory_hostname }}.ks.iso" owner=qemu group=qemu state=file mode=0644
+
+  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+
+- name: Create guest disk
+  command: /usr/bin/qemu-img create -f qcow2 {{ libvirt_storage_dir }}/{{ inventory_hostname }}.qcow2 {{ disk }}G
+  args:
+    creates: "{{ libvirt_storage_dir }}/{{ inventory_hostname }}.qcow2"
+  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+
+- fail: msg="Stopping here for now!"
+
+- name: wait until ISO is copied
+  async_status: jid={{ isocopy.ansible_job_id }}
+  register: job_isocopy
+  until: job_isocopy.finished
+  retries: 100
+  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+
+- name: Fetch current VM list
+  virt:
+    uri: qemu:///system
+    command: list_vms
+  register: vmlist
+  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+
+- name: ensure defined {{ inventory_hostname }} vm
+  virt:
+    name: "{{ inventory_hostname }}"
+    uri: qemu:///system
+    xml: '{{ lookup("template", "domain.xml.j2") }}'
+    command: define
+  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+
+- name: ensure running {{ inventory_hostname }} vm
+  virt:
+    name: "{{ inventory_hostname }}"
+    uri: qemu:///system
+    state: running
+  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+  when: not (inventory_hostname in vmlist.list_vms)
+
+- name: Wait for first boot to finish and shutdown
+  virt:
+    name: "{{ inventory_hostname }}"
+    uri: qemu:///system
+    command: status
+  register: vmstatus
+  until: (inventory_hostname in vmlist.list_vms) or (vmstatus.status == 'shutdown')
+  delay: 5
+  retries: 300
+  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+
+- name: ensure shutdown vm
+  virt:
+    name: "{{ inventory_hostname }}"
+    uri: qemu:///system
+    state: destroyed
+  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+  when: not (inventory_hostname in vmlist.list_vms)
+
+- name: detach iso
+  command: virsh detach-disk {{ inventory_hostname }} hdb --config
+  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+  when: not inventory_hostname in vmlist.list_vms
+
+- name: detach ks iso
+  command: virsh detach-disk {{ inventory_hostname }} hda --config
+  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+  when: not inventory_hostname in vmlist.list_vms
+
+- name: create xml snippet to re-attach iso
+  copy:
+    dest: /gluster/{{ gluster_libvirt_volume }}/{{ inventory_hostname }}.isoattach.xml
+    content: |
+      <disk type='network' device='cdrom'>
+        <driver name='qemu' type='raw'/>
+        <source protocol='gluster' name='libvirt_gvol/CentOS-7-x86_64-DVD-1611.iso'>
+          <host name='localhost'/>
+        </source>
+        <target dev='hda' bus='ide'/>
+      </disk>
+  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+
+- name: attach iso
+  command: virsh attach-device --domain {{ inventory_hostname }} --config /gluster/{{ gluster_libvirt_volume }}/{{ inventory_hostname }}.isoattach.xml
+  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+  when: not inventory_hostname in vmlist.list_vms
+
+- name: ensure running vm
+  virt:
+    name: "{{ inventory_hostname }}"
+    uri: qemu:///system
+    state: running
+  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+
+- name: Checking for SSH on {{ hostvars[inventory_hostname].ansible_host | default(inventory_hostname) }}
+  wait_for: port=22 host="{{ hostvars[inventory_hostname].ansible_host | default(inventory_hostname) }}" search_regex=OpenSSH
+  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"

@@ -1,0 +1,2 @@
+- name: Set hostname to match inventory_hostname
+  hostname: name="{{ inventory_hostname }}"

@@ -1,0 +1,9 @@
+ipa_realm: "{{ ipa_domain | upper }}"
+ansible_config_dir: /etc/ansible
+ansible_keytab: "{{ ansible_config_dir}}/ansible.keytab"
+ansible_account: ansible
+ansible_accounts_group: ansible-accounts
+ansible_hbac_svcgroup: ansible
+ansible_hbac_rule: ansible-hbac-rule
+ansible_sudo_rule: ansible-sudo-rule
+ipa_password_file: /root/password.txt

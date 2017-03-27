@@ -1,0 +1,16 @@
+- block:
+  - name: Create working location
+    file: state=directory name=tmp/{{ inventory_hostname }}
+
+  - name: Create kickstart file
+    template: dest=tmp/{{ inventory_hostname }}/ks.cfg src=ks.cfg.j2
+
+  - name: Create KS ISO for each host
+    command: mkisofs -VOEMDRV -o {{ inventory_hostname }}.ks.iso tmp/{{ inventory_hostname }}/.
+    args:
+      creates: "{{ inventory_hostname }}.ks.iso"
+
+  - name: Clean up working location
+    file: state=absent name=tmp/{{ inventory_hostname }}
+
+  delegate_to: localhost
