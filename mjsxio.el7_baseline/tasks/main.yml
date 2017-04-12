@@ -1,2 +1,24 @@
 - name: Set hostname to match inventory_hostname
   hostname: name="{{ inventory_hostname }}"
+
+- name: Register with RHSM if appropriate
+  redhat_subscription:
+    state: present
+    org_id: "{{ rhsm.org_id }}"
+    activationkey: "{{ rhsm.activationkey }}"
+  when: rhsm is defined
+
+- name: Capture all repo info
+  shell: subscription-manager repos --list | tail -n +4 | sed "s/^Repo ID:/- Repo_ID:/" | sed "s/^Repo Name:/  Repo_Name:/" | sed "s/^Repo URL:/  Repo_URL:/" | sed "s/^Enabled:/  Enabled:/"
+  register: sm_repolist_reg
+  changed_when: false
+
+- name: Disable unnecessary repos
+  command: subscription-manager repos --disable {{ item }}
+  with_items: "{{ sm_repolist_reg.stdout | from_yaml | selectattr('Enabled','equalto',1) | map(attribute='Repo_ID') | difference(redhat_repositories) }}"
+  changed_when: true
+
+- name: Enable necessary repos # Note the logic here is not exactly inverse of above, to force failure if there is an entry in redhat_repositories that is unknown to system
+  command: subscription-manager repos --enable {{ item }}
+  with_items: "{{ redhat_repositories | difference ( sm_repolist_reg.stdout | from_yaml | selectattr('Enabled','equalto',1) | map(attribute='Repo_ID')) }}"
+  changed_when: true

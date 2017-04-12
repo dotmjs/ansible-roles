@@ -1,0 +1,8 @@
+[NetDev]
+Name={{ interface.name }}
+Kind={{ interface.type }}
+
+{% if interface.type == "macvlan" %}
+[MACVLAN]
+Mode=bridge
+{% endif %}

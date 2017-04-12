@@ -1,0 +1,19 @@
+[Match]
+Name={{ interface.name }}
+
+[Network]
+IPForward=yes
+{% if interface.ipv4_cidr is defined %}
+Address={{ interface.ipv4_cidr }}
+Gateway={{ interface.ipv4_gateway }}
+{% elif interface.ipv4_dhcp is defined %}
+DHCP=yes
+{% endif %}
+{% if interface.ipv4_dns is defined %}
+{% for dns in interface.ipv4_dns %}
+DNS={{ dns }}
+{% endfor %}
+{% endif %}
+{% if interface.macvlan is defined %}
+MACVLAN={{ interface.macvlan }}
+{% endif %}

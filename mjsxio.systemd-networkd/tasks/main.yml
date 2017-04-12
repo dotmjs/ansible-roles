@@ -1,0 +1,43 @@
+- hostname: name="{{ inventory_hostname }}"
+
+- file: path=/etc/systemd/network state=directory mode=0755
+
+- name: create systemd-networkd networks for all defined interfaces
+  template: src=device.network.j2 dest=/etc/systemd/network/{{ item.name }}.network owner=root group=root mode=0644
+  vars:
+    interface: "{{ item }}"
+  with_items: "{{ interfaces }}"
+  notify: Restart systemd-networkd
+
+- name: create systemd-networkd netdevs for all defined-type interfaces
+  template: src=device.netdev.j2 dest=/etc/systemd/network/{{ item.name }}.netdev owner=root group=root mode=0644
+  vars:
+    interface: "{{ item }}"
+  with_items: "{{ interfaces }}"
+  when: item.type is defined
+  notify: Restart systemd-networkd
+
+- name: Install systemd-networkd
+  package: name={{ item }} state=latest
+  with_items:
+    - systemd-networkd
+    - systemd-resolved
+  notify: Restart systemd-networkd
+
+- name: Enable systemd-networkd
+  service: name={{ item }} enabled=yes
+  with_items:
+    - systemd-networkd
+    - systemd-resolved
+  notify: Reboot
+
+- name: Replace /etc/resolv.conf with symlink to /run/systemd/resolve/resolv.conf
+  file: path=/etc/resolv.conf state=link src=/run/systemd/resolve/resolv.conf force=yes
+
+- name: Disable NetworkManager
+  service: name=NetworkManager enabled=no
+  notify: Reboot
+
+- name: Disable network
+  service: name=network enabled=no
+  notify: Reboot

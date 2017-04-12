@@ -1,0 +1,19 @@
+- name: Reboot
+  shell: sleep 2 && shutdown -r now Ansible triggered reboot
+  async: 1
+  poll: 0
+  ignore_errors: true
+  changed_when: true
+  notify: Wait for reboot
+  
+- name: Wait for reboot
+  delegate_to: localhost
+  wait_for: host="{{ hostvars[inventory_hostname]["ansible_host"] | default(inventory_hostname) }}" port=22 state=started delay=10 timeout=300
+  become: false
+  
+- name: Restart systemd-networkd
+  service: name={{ item }} state=restarted
+  with_items:
+  - systemd-networkd
+  - systemd-resolved
+

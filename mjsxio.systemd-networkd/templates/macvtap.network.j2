@@ -1,0 +1,14 @@
+[Match]
+Name={{ macvtap_ifname }}
+
+[Network]
+IPForward=yes
+{% if ipv4_addr is defined and ipv4_addr %}
+Address={{ ipv4_addr }}/{{ ipv4_prefix }}
+Gateway={{ ipv4_gateway }}
+{% else %}
+DHCP=yes
+{% endif %}
+{% if ipv4_dns is defined and ipv4_dns %}
+DNS={{ ipv4_dns }}
+{% endif %}

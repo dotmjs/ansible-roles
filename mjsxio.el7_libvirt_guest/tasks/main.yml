@@ -1,16 +1,23 @@
-- name: Copy install ISO to libvirt host
-  copy: src="{{ iso }}" dest="{{ libvirt_storage_dir }}" owner=qemu group=qemu mode=0644
+
+- name: Copy install media to libvirt host
+  command: scp {{ install_media }} {{ ( libvirt_host+":" if not( libvirt_host=="localhost" ) else "" ) + hostvars[libvirt_host].libvirt_storage_dir }}
+  delegate_to: localhost
+
+- name: Adjust permissions
+  file: state=file path="{{ hostvars[libvirt_host].libvirt_storage_dir }}/{{ install_media.split("/")[-1] }}" owner=qemu group=qemu mode=0644
   delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
 
-- block: #Create Kickstart ISO
+- fail: msg="fail here"
+
+- block: #Create Kickstart media
 
   - name: Create working directory
-    file: state=directory path="{{ libvirt_storage_dir }}/{{ inventory_hostname }}.ks.d"
+    file: state=directory path="{{ hostvars[libvirt_host].libvirt_storage_dir }}/{{ inventory_hostname }}.ks.d"
 
   - name: Create kickstart file
-    template: dest="{{ libvirt_storage_dir }}/{{ inventory_hostname }}.ks.d/ks.cfg" src=ks.cfg.j2
+    template: dest="{{ hostvars[libvirt_host].libvirt_storage_dir }}/{{ inventory_hostname }}.ks.d/ks.cfg" src=ks.cfg.j2
 
-  - name: Create KS ISO for each host
+  - name: Create KS media for each host
     command: mkisofs -VOEMDRV -o {{ libvirt_storage_dir }}/{{ inventory_hostname }}.ks.iso {{ libvirt_storage_dir }}/{{ inventory_hostname }}.ks.d/.
     args:
       creates: "{{ libvirt_storage_dir }}/{{ inventory_hostname }}.ks.iso"
@@ -27,10 +34,10 @@
 
 - fail: msg="Stopping here for now!"
 
-- name: wait until ISO is copied
-  async_status: jid={{ isocopy.ansible_job_id }}
-  register: job_isocopy
-  until: job_isocopy.finished
+- name: wait until media is copied
+  async_status: jid={{ mediacopy.ansible_job_id }}
+  register: job_mediacopy
+  until: job_mediacopy.finished
   retries: 100
   delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
 
@@ -76,19 +83,19 @@
   delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
   when: not (inventory_hostname in vmlist.list_vms)
 
-- name: detach iso
+- name: detach media
   command: virsh detach-disk {{ inventory_hostname }} hdb --config
   delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
   when: not inventory_hostname in vmlist.list_vms
 
-- name: detach ks iso
+- name: detach ks media
   command: virsh detach-disk {{ inventory_hostname }} hda --config
   delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
   when: not inventory_hostname in vmlist.list_vms
 
-- name: create xml snippet to re-attach iso
+- name: create xml snippet to re-attach media
   copy:
-    dest: /gluster/{{ gluster_libvirt_volume }}/{{ inventory_hostname }}.isoattach.xml
+    dest: /gluster/{{ gluster_libvirt_volume }}/{{ inventory_hostname }}.mediaattach.xml
     content: |
       <disk type='network' device='cdrom'>
         <driver name='qemu' type='raw'/>
@@ -99,7 +106,7 @@
       </disk>
   delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
 
-- name: attach iso
+- name: attach media
   command: virsh attach-device --domain {{ inventory_hostname }} --config /gluster/{{ gluster_libvirt_volume }}/{{ inventory_hostname }}.isoattach.xml
   delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
   when: not inventory_hostname in vmlist.list_vms

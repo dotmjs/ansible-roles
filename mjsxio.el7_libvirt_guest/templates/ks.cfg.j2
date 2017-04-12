@@ -1,0 +1,70 @@
+#version=DEVEL
+# System authorization information
+auth --enableshadow --passalgo=sha512
+# Use CDROM installation media
+cdrom
+# Use graphical install
+text
+# Run the Setup Agent on first boot
+firstboot --disable
+ignoredisk --only-use=vda
+# Keyboard layouts
+keyboard --vckeymap=us --xlayouts='us'
+# System language
+lang en_US.UTF-8
+
+# Network information
+network  --device=eth0 --bootproto=dhcp --hostname={{ inventory_hostname }}
+
+# Root password
+rootpw --iscrypted {{ root_passwd }}
+# System timezone
+timezone America/New_York --isUtc
+# System bootloader configuration
+bootloader --append=" crashkernel=auto" --location=mbr --boot-drive=vda
+# Partition clearing information
+clearpart --all --initlabel --drives=vda
+# Disk partitioning information
+part /boot/efi --fstype="efi" --ondisk=vda --size=200 --fsoptions="umask=0077,shortname=winnt"
+part /boot --fstype="xfs" --ondisk=vda --size=500
+part pv.243 --fstype="lvmpv" --ondisk=vda --grow
+volgroup centos --pesize=4096 pv.243
+logvol /  --fstype="xfs" --size=4096 --name=root --vgname=centos
+logvol swap  --fstype="swap" --size=2048 --name=swap --vgname=centos
+
+%packages --nobase  --excludedocs
+@^minimal
+@core --nodefaults
+kexec-tools
+-aic94xx-firmware*
+-alsa-*
+-btrfs-progs*
+-dhclient
+-dhcp*
+-dracut-network
+-iprutils
+-ivtv*
+-iwl*firmware
+-libertas*
+-plymouth*
+-postfix
+-avahi
+%end
+
+#Firewall
+firewall --enable --ssh
+
+shutdown
+
+%addon com_redhat_kdump --enable --reserve-mb='auto'
+
+%end
+
+%post
+# Inject SSH key
+mkdir -m0700 /root/.ssh/
+cat <<EOF >/root/.ssh/authorized_keys
+{{ lookup('file', ansible_ssh_private_key_file | default('~/.ssh/id_rsa')) }}
+EOF
+chmod 0600 /root/.ssh/authorized_keys
+restorecon -R /root/.ssh/

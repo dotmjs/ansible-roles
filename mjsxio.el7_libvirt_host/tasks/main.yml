@@ -1,0 +1,21 @@
+- name: Install libvirt related packages
+  package: name={{ item }} state=installed
+  with_items:
+    - libvirt-daemon-kvm
+    - libvirt-python
+    - libvirt-client
+    - genisoimage
+
+- name: Ensure libvirtd is running
+  service: name=libvirtd state=started
+
+- name: Capture current tuned profile
+  shell: tuned-adm active | rev | cut -f 1 -d " " | rev
+  register: tuned_return
+  changed_when: false
+
+- name: Enable virtual-host tuned profile
+  command: tuned-adm profile virtual-host
+  when: tuned_return.stdout != "virtual-host"
+  changed_when: true
+  #changed_when: tuned_return.stdout != "virtual-host"
