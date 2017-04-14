@@ -5,6 +5,7 @@
     - libvirt-python
     - libvirt-client
     - genisoimage
+    - rsync
 
 - name: Ensure libvirtd is running
   service: name=libvirtd state=started
