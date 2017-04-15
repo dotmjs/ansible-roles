@@ -1,11 +1,14 @@
-
 - name: Copy install media to libvirt host
-  command: scp {{ install_media }} {{ ( libvirt_host+":" if not( libvirt_host=="localhost" ) else "" ) + hostvars[libvirt_host].libvirt_storage_dir }}
+  synchronize: src="{{ iso }}" dest="ssh://{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}/{{ hostvars[libvirt_host].libvirt_storage_dir }}"
   delegate_to: localhost
-
-- name: Adjust permissions
-  file: state=file path="{{ hostvars[libvirt_host].libvirt_storage_dir }}/{{ install_media.split("/")[-1] }}" owner=qemu group=qemu mode=0644
-  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+#
+# - name: Copy install media to libvirt host
+#   command: scp {{ install_media }} {{ ( libvirt_host+":" if not( libvirt_host=="localhost" ) else "" ) + hostvars[libvirt_host].libvirt_storage_dir }}
+#   delegate_to: localhost
+#
+# - name: Adjust permissions
+#   file: state=file path="{{ hostvars[libvirt_host].libvirt_storage_dir }}/{{ install_media.split("/")[-1] }}" owner=qemu group=qemu mode=0644
+#   delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
 
 - fail: msg="fail here"
 
