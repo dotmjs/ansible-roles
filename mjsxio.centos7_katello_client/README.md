@@ -1,0 +1,1 @@
+# mjsxio.centos7_katello_client

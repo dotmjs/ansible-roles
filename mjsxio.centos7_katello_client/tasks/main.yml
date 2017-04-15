@@ -1,0 +1,32 @@
+- name: Install katello repo
+  command: yum localinstall -y http://fedorapeople.org/groups/katello/releases/yum/3.3/client/el7/x86_64/katello-client-repos-latest.rpm
+  changed_when: false #no change, only failure
+
+- name: Install EPEL repo
+  command: yum -y localinstall http://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+  changed_when: false #no change, only failure
+
+- name: Install client packages
+  package: name="{{ item }}" state=latest
+  with_items:
+  - katello-agent
+  - subscription-manager
+
+- name: Install katello bootstrap rpm
+  command: yum localinstall -y http://{{ katello_server_hostname }}/pub/katello-ca-consumer-latest.noarch.rpm
+  changed_when: false #no change, only failure
+  register: yum_reg
+  failed_when: yum_reg.rc != 0
+
+- name: Register to katello
+  redhat_subscription:
+    state: present
+    activationkey: "{{ activationkey }}"
+    org_id: "{{ org_id }}"
+
+- name: start goferd service
+  service: name=goferd enabled=true state=started
+
+- name: Refresh subscription status
+  command: subscription-manager refresh
+  changed_when: false #no change, only failure

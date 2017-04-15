@@ -1,0 +1,36 @@
+- name: Open ports in local firewall
+  firewalld: service="{{ item }}" permanent=true immediate=yes state=enabled
+  with_items:
+  - RH-Satellite-6
+
+- name: Ensure repos supporting katello are installed
+  command: yum localinstall -y {{ item }}
+  with_items:
+  - http://fedorapeople.org/groups/katello/releases/yum/3.3/katello/el7/x86_64/katello-repos-latest.rpm
+  - http://yum.theforeman.org/releases/1.14/el7/x86_64/foreman-release.rpm
+  - https://yum.puppetlabs.com/puppetlabs-release-pc1-el-7.noarch.rpm
+  - https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+  changed_when: false #no change, only failure
+
+- name: Ensure packages supporting katello are installed
+  package: name="{{ item }}" state=latest
+  with_items:
+  - foreman-release-scl
+  - ipa-admintools
+  - subscription-manager
+  - katello-agent
+
+- name: Update all packages
+  package: name="*" state=latest
+
+- name: Install katello package
+  package: name=katello state=latest
+
+- name: Install additional packages
+  package: name="{{ item }}"
+  with_items:
+  - ansible
+  - tfm-rubygem-foreman_ansible
+  - foreman-libvirt
+
+#foreman-installer --scenario katello --disable-system-checks  --enable-foreman-plugin-ansible --foreman-ipa-authentication true --foreman-proxy-realm true --enable-foreman-proxy-plugin-ansible

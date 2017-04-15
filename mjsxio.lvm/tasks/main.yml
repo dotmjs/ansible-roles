@@ -1,0 +1,15 @@
+- name: Create LVM VGs
+  lvg: vg="{{ item.name }}" pvs="{{ item.pvs | join(',') }}"
+  with_items: "{{ lvm_vgs | default([]) }}"
+
+- name: Create LVM LVs
+  lvol: lv="{{ item.name }}" vg="{{ item.vg }}" size="{{ item.size }}"
+  with_items: "{{ lvm_lvs | default([]) }}"
+
+- name: Create filesystem on LVs
+  filesystem: dev="/dev/{{ item.vg }}/{{ item.name }}" fstype="{{ item.fstype }}"
+  with_items: "{{ lvm_lvs | default([]) }}"
+
+- name: Mount LVM LVs
+  mount: name="{{ item.path }}" src="/dev/{{ item.vg }}/{{ item.name }}" fstype="{{ item.fstype }}" state=mounted
+  with_items: "{{ lvm_lvs | default([]) }}"
