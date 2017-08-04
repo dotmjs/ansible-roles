@@ -1,9 +1,12 @@
 ipa_realm: "{{ ipa_domain | upper }}"
 ansible_config_dir: /etc/ansible
-ansible_keytab: "{{ ansible_config_dir}}/ansible.keytab"
-ansible_account: ansible
-ansible_accounts_group: ansible-accounts
-ansible_hbac_svcgroup: ansible
-ansible_hbac_rule: ansible-hbac-rule
-ansible_sudo_rule: ansible-sudo-rule
-ipa_password_file: /root/password.txt
+ansible_ipa_keytab: "{{ ansible_config_dir}}/ansible-ipa.keytab"
+ansible_ipa_pwfile: "{{ ansible_config_dir}}/ansible-ipa.passwd"
+ansible_ipa_pwcomplexity: "chars=ascii_letters,digits,hexdigits,punctuation length=16"
+ansible_ipa_account_prefix: ansible-
+ansible_ipa_accounts_group: ansible-ipa-accounts
+ansible_ipa_hbac_svcgroup: ansible-ipa
+ansible_ipa_hbac_rule: ansible-ipa-hbac
+ansible_ipa_sudo_rule: ansible-ipa-sudo
+ipa_adminpasswd: "{{ admin_password }}"
+ipa_dspasswd: "{{ admin_password }}"

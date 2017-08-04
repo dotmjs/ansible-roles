@@ -1,0 +1,16 @@
+- name: Ensure promoted to AD Domain Controller
+  win_domain:
+    safe_mode_password: "{{ admin_password}}"
+    dns_domain_name: "{{ ad_domain }}"
+  register: result
+
+- name: Install ADUC
+  win_command: dism /Online  /enable-feature /featurename:DirectoryServices-AdministrativeCenter /all
+  # win_feature:
+  #   name: DirectoryServices-DomainController-Tools,RSAT-ADDS-Tools-Features,DirectoryServices-AdministrativeCenter
+  #   state: present
+  #   include_management_tools: true
+
+- name: Reboot if needed
+  win_reboot:
+  when: result.reboot_required

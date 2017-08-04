@@ -1,0 +1,88 @@
+- block: #Create Unattended media
+
+  - name: Create working directory
+    file: state=directory path="{{ libvirt_storage }}/{{ inventory_hostname }}.autounattend.d"
+
+  - name: create unattended install file from template
+    template:
+      dest: "{{ libvirt_storage }}/{{ inventory_hostname }}.autounattend.d/autounattend.xml"
+      src: autounattend.xml.j2
+
+  - name: create autounattend media with autounattend.xml in root
+    command: genisoimage -quiet -output "{{ libvirt_storage }}/{{ inventory_hostname }}.autounattend.iso" -V OEMDRV -joliet -input-charset utf8 -rock "{{ libvirt_storage }}/{{ inventory_hostname }}.autounattend.d/autounattend.xml"
+    args:
+      creates: "{{ libvirt_storage }}/{{ inventory_hostname }}.autounattend.iso"
+
+  - file: dest="{{ libvirt_storage }}/{{ inventory_hostname }}.autounattend.iso" owner=qemu group=qemu state=file
+
+  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+
+- block: #Create VM disk
+  - name: create guest disk
+    command: qemu-img create -f qcow2 "{{ libvirt_storage }}/{{ inventory_hostname }}.qcow2" {{ diskG }}G
+    args:
+      creates: "{{ libvirt_storage }}/{{ inventory_hostname }}.qcow2"
+
+  - file: dest={{ libvirt_storage }}/{{ inventory_hostname }}.qcow2 owner=qemu group=qemu state=file
+
+  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+
+- name: Fetch current VM list
+  virt:
+    uri: "qemu:///system"
+    command: list_vms
+  register: vmlist
+  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+
+- block: #Create VM
+
+  - name: ensure defined {{ inventory_hostname }} vm
+    virt:
+      name: "{{ inventory_hostname }}"
+      uri: "qemu:///system"
+      xml: '{{ lookup("template", "domain.xml.j2") }}'
+      command: define
+
+  - name: ensure running {{ inventory_hostname }} vm
+    virt:
+      name: "{{ inventory_hostname }}"
+      uri: "qemu:///system"
+      state: running
+
+  - name: Wait for first boot to finish and shutdown
+    virt:
+      name: "{{ inventory_hostname }}"
+      uri: "qemu:///system"
+      command: status
+    register: vmstatus
+    until: vmstatus.status == 'shutdown'
+    delay: 5
+    retries: 300
+
+  - name: ensure running {{ inventory_hostname }} vm
+    virt:
+      name: "{{ inventory_hostname }}"
+      uri: "qemu:///system"
+      state: running
+
+  - wait_for: port={{ ansible_port }} host="{{ inventory_hostname }}"
+
+  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+  when: not (inventory_hostname in vmlist.list_vms)
+
+
+- name: Check connectivity
+  win_ping:
+
+- name: Update DNS settings
+  win_dns_client:
+    adapter_names: Ethernet
+    ipv4_addresses: "{{ dns_server }}"
+
+# - name: Apply all Windows updates
+#   win_updates:
+#   register: result
+#
+# - name: Reboot if needed
+#   win_reboot:
+#   when: result.reboot_required
