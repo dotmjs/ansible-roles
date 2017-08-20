@@ -1,7 +1,11 @@
 - name: Copy install media to libvirt host
-  synchronize: src="{{ iso }}" dest="ssh://{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}/{{ hostvars[libvirt_host].libvirt_storage_dir }}"
-  delegate_to: localhost
-#
+  copy: src="{{ iso }}" dest="{{ hostvars[libvirt_host].libvirt_storage_dir }}"
+  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+
+# - name: Copy install media to libvirt host
+#   synchronize: src="{{ iso }}" dest="{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}:{{ hostvars[libvirt_host].libvirt_storage_dir }}"
+#   delegate_to: localhost
+# #
 # - name: Copy install media to libvirt host
 #   command: scp {{ install_media }} {{ ( libvirt_host+":" if not( libvirt_host=="localhost" ) else "" ) + hostvars[libvirt_host].libvirt_storage_dir }}
 #   delegate_to: localhost
