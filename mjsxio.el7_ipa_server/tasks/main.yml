@@ -44,7 +44,7 @@
     changed_when: false
 
   - fail: msg="Unable to determine if domain is already in use.  Please check DNS."
-    when: dns_check.rc>0 
+    when: dns_check.rc>0
 
   - set_fact: ipa_master_install=true
     when: dns_check.rc==0 and not (dns_check.stdout)
@@ -53,141 +53,174 @@
     when: not ( ipa_master_install is defined )
 
   - block: # Install IPA Master
-    - name: Generate Random Admin Password
-      shell: 'tr -d -c "a-zA-Z0-9" < /dev/urandom | head -c 20 | tee {{ ipa_password_file }}'
-      register: pwgen
-      when: not ( ipa_adminpasswd is defined)
-      args:
-        creates: "{{ ipa_password_file }}"
-
-    - set_fact: ipa_adminpasswd="{{ pwgen.stdout|default() }}"
-      when: not (ipa_adminpasswd is defined)
-
-    - set_fact: ipa_dspasswd="{{ ipa_adminpasswd }}"
-      when: not( ipa_dspasswd is defined )
-
     - name: Install IPA server
       command: ipa-server-install --unattended --setup-dns --realm={{ ipa_realm }} --domain={{ ipa_domain }} --ds-password={{ ipa_dspasswd }} --admin-password={{ ipa_adminpasswd }} --no_hbac_allow --ssh-trust-dns --no-forwarders
 
-    - debug: msg="IPA server has been installed.  If not supplied, a random admin password has been generated and stored in {{ ipa_password_file }}"
     when: ipa_master_install is defined
 
-  - block: # Install IPA Replica
-    - debug: msg="Let's install a replica!"
-    when: not ( ipa_master_install is defined )
-
-  when: not ( ipa_server_installed is defined )
-
-## Check if there is already an IPA server for this ipa_domain, if so install a replica
+#XXX TODO - Create Replica
+  # - block: # Install IPA Replica
+  #   - debug: msg="Let's install a replica!"
+  #   when: not ( ipa_master_install is defined )
+  #
+  # when: not ( ipa_server_installed is defined )
 
 # END: IPA SERVER INSTALL
 
-# START: CREATE ANSIBLE/IPA
+# START: CREATE ANSIBLE-IPA
+- name: Make sure ansible config directory exists
+  file: path="{{ ansible_config_dir}}" state=directory mode=0700
+
 - name: Check existence of ansible keytab
   stat:
-    path: "{{ ansible_keytab }}"
+    path: "{{ ansible_ipa_keytab }}"
   register: ansible_keytab_stat
 
-- name: kinit as admin
-  shell: echo {{ ipa_adminpasswd }} | kinit admin
-  when: not ansible_keytab_stat.stat.exists
-
-######  ALL OF THIS WILL BE REPLACED BY Ansible 2.3 ipa_* MODULES #######
-- name: Create ansible account {{ ansible_account }}
-  command: ipa user-add {{ ansible_account }} --first ansible --last account
-  when: not ansible_keytab_stat.stat.exists
-  register: ipa_reg
-  changed_when: ipa_reg.rc==0
-  failed_when: ipa_reg.rc>=2
-
-- name: Create {{ ansible_accounts_group }} group
-  command: ipa group-add {{ ansible_accounts_group }}
-  when: not ansible_keytab_stat.stat.exists
-  register: ipa_reg
-  changed_when: ipa_reg.rc==0
-  failed_when: ipa_reg.rc>=2
-
-- name: Add ansible account to ansible-accounts group
-  command: ipa group-add-member --users={{ ansible_account }} {{ ansible_accounts_group }}
-  when: not ansible_keytab_stat.stat.exists
-  register: ipa_reg
-  changed_when: ipa_reg.rc==0
-  failed_when: ipa_reg.rc>=2
-
-- name: Add ansible-accounts group to IPA admins group
-  command: ipa group-add-member --groups={{ ansible_accounts_group }} admins
-  when: not ansible_keytab_stat.stat.exists
-  register: ipa_reg
-  changed_when: ipa_reg.rc==0
-  failed_when: ipa_reg.rc>=2
-
-- name: Create HBAC service group for ansible services
-  command: ipa hbacsvcgroup-add {{ ansible_hbac_svcgroup }}
-  when: not ansible_keytab_stat.stat.exists
-  register: ipa_reg
-  changed_when: ipa_reg.rc==0
-  failed_when: ipa_reg.rc>=2
-
-- name: Add ansible services to HBAC service group
-  command: ipa hbacsvcgroup-add-member {{ ansible_hbac_svcgroup }} --hbacsvcs=sshd --hbacsvcs=sudo
-  when: not ansible_keytab_stat.stat.exists
-  register: ipa_reg
-  changed_when: ipa_reg.rc==0
-  failed_when: ipa_reg.rc>=2
-
-- name: Create HBAC rule for ansible access to all servers
-  command: ipa hbacrule-add {{ ansible_hbac_rule }} --hostcat=all
-  when: not ansible_keytab_stat.stat.exists
-  register: ipa_reg
-  changed_when: ipa_reg.rc==0
-  failed_when: ipa_reg.rc>=2
-
-- name: Add ansible-accounts group to HBAC rule for ansible access
-  command: ipa hbacrule-add-user {{ ansible_hbac_rule }} --groups={{ ansible_accounts_group }}
-  when: not ansible_keytab_stat.stat.exists
-  register: ipa_reg
-  changed_when: ipa_reg.rc==0
-  failed_when: ipa_reg.rc>=2
-
-- name: Add ansible services to HBAC rule for ansible access
-  command: ipa hbacrule-add-service {{ ansible_hbac_rule }}  --hbacsvcgroups={{ ansible_hbac_svcgroup }}
-  when: not ansible_keytab_stat.stat.exists
-  register: ipa_reg
-  changed_when: ipa_reg.rc==0
-  failed_when: ipa_reg.rc>=2
-
-- name: Create ansible-sudo rule for all hosts
-  command: ipa sudorule-add {{ ansible_sudo_rule }} --cmdcat=all --hostcat=all
-  when: not ansible_keytab_stat.stat.exists
-  register: ipa_reg
-  changed_when: ipa_reg.rc==0
-  failed_when: ipa_reg.rc>=2
-
-- name: Set the !authenticate flag on ansible-sudo rule
-  command: ipa sudorule-add-option {{ ansible_sudo_rule }} --sudooption='!authenticate'
-  when: not ansible_keytab_stat.stat.exists
-  register: ipa_reg
-  changed_when: ipa_reg.rc==0
-  failed_when: ipa_reg.rc>=2
-
-- name: Add the ansible-accounts group to the ansible-sudo rule
-  command: ipa sudorule-add-user {{ ansible_sudo_rule }} --groups={{ ansible_accounts_group }}
-  when: not ansible_keytab_stat.stat.exists
-  register: ipa_reg
-  changed_when: ipa_reg.rc==0
-  failed_when: ipa_reg.rc>=2
-
-###### END REPLACE ######
-
-- name: Make sure ansible config directory exists
-  file: path="{{ ansible_config_dir}}" state=directory mode=0500
-
-- name: Create keytab for ansible account
-  command: ipa-getkeytab -k {{ ansible_keytab }} -p {{ ansible_account }}
+- name: Generate Random Ansible IPA Password
+  shell: 'tr -d -c "a-zA-Z0-9" < /dev/urandom | head -c 20 | tee {{ ansible_ipa_pwfile }}'
   args:
-    creates: "{{ ansible_keytab }}"
+    creates: "{{ ansible_ipa_pwfile }}"
 
-- name: Authenticate as ansible account
-  command: kinit -k -t {{ ansible_keytab }}  {{ ansible_account }}
+- name: Fetch Ansible IP password
+  shell: 'cat {{ ansible_ipa_pwfile }}'
+  register: shell_result
 
-# END: CREATE ANSIBLE/IPA
+- set_fact: ansible_ipa_passwd="{{ shell_result.stdout|default() }}"
+
+- block: # Create ansible-ipa account, keytab, rules
+
+  - name: kinit as admin
+    shell: echo {{ ipa_adminpasswd }} | kinit admin
+
+  - name: create ansible ipa admin user
+    ipa_user:
+      name: "{{ ansible_ipa_account_prefix }}{{ inventory_hostname }}"
+      givenname: "{{ ansible_ipa_account_prefix }}{{ inventory_hostname }}"
+      sn: account
+      ipa_pass: "{{ ipa_adminpasswd }}"
+      password: "ansible_ipa_passwd"
+      ipa_host: "{{ inventory_hostname }}"
+
+  - name: create ansible ipa admin group
+    ipa_group:
+      name: "{{ ansible_ipa_accounts_group }}"
+      ipa_pass: "{{ ipa_adminpasswd }}"
+      ipa_host: "{{ inventory_hostname }}"
+
+  - name: Add ansible account to ansible-accounts group
+    command: ipa group-add-member --users="{{ ansible_ipa_account_prefix }}{{ inventory_hostname }}" {{ ansible_ipa_accounts_group }}
+    register: ipa_reg
+    changed_when: ipa_reg.rc==0
+    failed_when: ipa_reg.rc>=2
+
+  - name: Add ansible-accounts group to IPA admins group
+    command: ipa group-add-member --groups={{ ansible_ipa_accounts_group }} admins
+    register: ipa_reg
+    changed_when: ipa_reg.rc==0
+    failed_when: ipa_reg.rc>=2
+
+#
+# - name: Create keytab for ansible account
+#   command: ipa-getkeytab -k {{ ansible_keytab }} -p "{{ ansible_ipa_account_prefix }}{{ inventory_hostname }}"
+#   args:
+#     creates: "{{ ansible_keytab }}"
+
+  run_once: true
+  when: not ansible_keytab_stat.stat.exists
+
+- name: Bail out
+  fail: msg="Bailing out!"
+
+# ######  ALL OF THIS WILL BE REPLACED BY Ansible 2.3 ipa_* MODULES #######
+# - name: Create ansible account {{ ansible_account }}
+#   command: ipa user-add {{ ansible_account }} --first ansible --last account
+#   when: not ansible_keytab_stat.stat.exists
+#   register: ipa_reg
+#   changed_when: ipa_reg.rc==0
+#   failed_when: ipa_reg.rc>=2
+#
+# - name: Create {{ ansible_accounts_group }} group
+#   command: ipa group-add {{ ansible_accounts_group }}
+#   when: not ansible_keytab_stat.stat.exists
+#   register: ipa_reg
+#   changed_when: ipa_reg.rc==0
+#   failed_when: ipa_reg.rc>=2
+#
+
+# - name: Add ansible-accounts group to IPA admins group
+#   command: ipa group-add-member --groups={{ ansible_accounts_group }} admins
+#   when: not ansible_keytab_stat.stat.exists
+#   register: ipa_reg
+#   changed_when: ipa_reg.rc==0
+#   failed_when: ipa_reg.rc>=2
+#
+# - name: Create HBAC service group for ansible services
+#   command: ipa hbacsvcgroup-add {{ ansible_hbac_svcgroup }}
+#   when: not ansible_keytab_stat.stat.exists
+#   register: ipa_reg
+#   changed_when: ipa_reg.rc==0
+#   failed_when: ipa_reg.rc>=2
+#
+# - name: Add ansible services to HBAC service group
+#   command: ipa hbacsvcgroup-add-member {{ ansible_hbac_svcgroup }} --hbacsvcs=sshd --hbacsvcs=sudo
+#   when: not ansible_keytab_stat.stat.exists
+#   register: ipa_reg
+#   changed_when: ipa_reg.rc==0
+#   failed_when: ipa_reg.rc>=2
+#
+# - name: Create HBAC rule for ansible access to all servers
+#   command: ipa hbacrule-add {{ ansible_hbac_rule }} --hostcat=all
+#   when: not ansible_keytab_stat.stat.exists
+#   register: ipa_reg
+#   changed_when: ipa_reg.rc==0
+#   failed_when: ipa_reg.rc>=2
+#
+# - name: Add ansible-accounts group to HBAC rule for ansible access
+#   command: ipa hbacrule-add-user {{ ansible_hbac_rule }} --groups={{ ansible_accounts_group }}
+#   when: not ansible_keytab_stat.stat.exists
+#   register: ipa_reg
+#   changed_when: ipa_reg.rc==0
+#   failed_when: ipa_reg.rc>=2
+#
+# - name: Add ansible services to HBAC rule for ansible access
+#   command: ipa hbacrule-add-service {{ ansible_hbac_rule }}  --hbacsvcgroups={{ ansible_hbac_svcgroup }}
+#   when: not ansible_keytab_stat.stat.exists
+#   register: ipa_reg
+#   changed_when: ipa_reg.rc==0
+#   failed_when: ipa_reg.rc>=2
+#
+# - name: Create ansible-sudo rule for all hosts
+#   command: ipa sudorule-add {{ ansible_sudo_rule }} --cmdcat=all --hostcat=all
+#   when: not ansible_keytab_stat.stat.exists
+#   register: ipa_reg
+#   changed_when: ipa_reg.rc==0
+#   failed_when: ipa_reg.rc>=2
+#
+# - name: Set the !authenticate flag on ansible-sudo rule
+#   command: ipa sudorule-add-option {{ ansible_sudo_rule }} --sudooption='!authenticate'
+#   when: not ansible_keytab_stat.stat.exists
+#   register: ipa_reg
+#   changed_when: ipa_reg.rc==0
+#   failed_when: ipa_reg.rc>=2
+#
+# - name: Add the ansible-accounts group to the ansible-sudo rule
+#   command: ipa sudorule-add-user {{ ansible_sudo_rule }} --groups={{ ansible_accounts_group }}
+#   when: not ansible_keytab_stat.stat.exists
+#   register: ipa_reg
+#   changed_when: ipa_reg.rc==0
+#   failed_when: ipa_reg.rc>=2
+#
+# ###### END REPLACE ######
+#
+# - name: Make sure ansible config directory exists
+#   file: path="{{ ansible_config_dir}}" state=directory mode=0500
+#
+# - name: Create keytab for ansible account
+#   command: ipa-getkeytab -k {{ ansible_keytab }} -p {{ ansible_account }}
+#   args:
+#     creates: "{{ ansible_keytab }}"
+#
+# - name: Authenticate as ansible account
+#   command: kinit -k -t {{ ansible_keytab }}  {{ ansible_account }}
+#
+# # END: CREATE ANSIBLE/IPA

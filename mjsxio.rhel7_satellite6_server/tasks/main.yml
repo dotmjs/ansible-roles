@@ -1,0 +1,25 @@
+- name: Open ports in local firewall
+  firewalld: service="{{ item }}" permanent=true immediate=yes state=enabled
+  with_items:
+  - RH-Satellite-6
+
+- name: Ensure Satellite6 repos are enabled
+  command: subscription-manager repos --enable=rhel-7-server-rpms --enable=rhel-server-rhscl-7-rpms --enable=rhel-7-server-satellite-6.2-rpms
+
+- name: Update all packages
+  package: name="*" state=latest
+
+- name: Ensure Satellite6 packages are installed
+  package: name="{{ item }}" state=latest
+  with_items:
+  - ipa-admintools
+  - satellite
+
+#- name: Install additional packages
+#  package: name="{{ item }}"
+#  with_items:
+#  - ansible
+#  - tfm-rubygem-foreman_ansible
+#  - foreman-libvirt
+
+#foreman-installer --scenario katello --disable-system-checks  --enable-foreman-plugin-ansible --foreman-ipa-authentication true --foreman-proxy-realm true --enable-foreman-proxy-plugin-ansible

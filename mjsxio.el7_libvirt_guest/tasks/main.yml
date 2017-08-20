@@ -19,33 +19,28 @@
 - block: #Create Kickstart media
 
   - name: Create working directory
-    file: state=directory path="{{ hostvars[libvirt_host].libvirt_storage_dir }}/{{ inventory_hostname }}.ks.d"
+    file: state=directory path="{{ hostvars[libvirt_host].libvirt_storage }}/{{ inventory_hostname }}.ks.d"
 
   - name: Create kickstart file
-    template: dest="{{ hostvars[libvirt_host].libvirt_storage_dir }}/{{ inventory_hostname }}.ks.d/ks.cfg" src=ks.cfg.j2
+    template: dest="{{ hostvars[libvirt_host].libvirt_storage }}/{{ inventory_hostname }}.ks.d/ks.cfg" src=ks.cfg.j2
 
   - name: Create KS media for each host
-    command: mkisofs -VOEMDRV -o {{ libvirt_storage_dir }}/{{ inventory_hostname }}.ks.iso {{ libvirt_storage_dir }}/{{ inventory_hostname }}.ks.d/.
+    command: mkisofs -VOEMDRV -o {{ libvirt_storage }}/{{ inventory_hostname }}.ks.iso {{ libvirt_storage }}/{{ inventory_hostname }}.ks.d/.
     args:
-      creates: "{{ libvirt_storage_dir }}/{{ inventory_hostname }}.ks.iso"
+      creates: "{{ libvirt_storage }}/{{ inventory_hostname }}.ks.iso"
 
-  - file: state=file path="{{ libvirt_storage_dir }}/{{ inventory_hostname }}.ks.iso" owner=qemu group=qemu state=file mode=0644
+  - file: state=file path="{{ libvirt_storage }}/{{ inventory_hostname }}.ks.iso" owner=qemu group=qemu state=file mode=0644
 
   delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
 
-- name: Create guest disk
-  command: /usr/bin/qemu-img create -f qcow2 {{ libvirt_storage_dir }}/{{ inventory_hostname }}.qcow2 {{ disk }}G
-  args:
-    creates: "{{ libvirt_storage_dir }}/{{ inventory_hostname }}.qcow2"
-  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+- block: #Create VM disk
+  - name: Create guest disk
+    command: /usr/bin/qemu-img create -f qcow2 {{ libvirt_storage }}/{{ inventory_hostname }}.qcow2 {{ diskG }}G
+    args:
+      creates: "{{ libvirt_storage }}/{{ inventory_hostname }}.qcow2"
 
-- fail: msg="Stopping here for now!"
+  - file: dest={{ libvirt_storage }}/{{ inventory_hostname }}.qcow2 owner=qemu group=qemu state=file
 
-- name: wait until media is copied
-  async_status: jid={{ mediacopy.ansible_job_id }}
-  register: job_mediacopy
-  until: job_mediacopy.finished
-  retries: 100
   delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
 
 - name: Fetch current VM list
@@ -55,76 +50,71 @@
   register: vmlist
   delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
 
-- name: ensure defined {{ inventory_hostname }} vm
-  virt:
-    name: "{{ inventory_hostname }}"
-    uri: qemu:///system
-    xml: '{{ lookup("template", "domain.xml.j2") }}'
-    command: define
-  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+- block: #Create VM
 
-- name: ensure running {{ inventory_hostname }} vm
-  virt:
-    name: "{{ inventory_hostname }}"
-    uri: qemu:///system
-    state: running
+  - name: ensure defined {{ inventory_hostname }} vm
+    virt:
+      name: "{{ inventory_hostname }}"
+      uri: qemu:///system
+      xml: '{{ lookup("template", "domain.xml.j2") }}'
+      command: define
+
+  - name: ensure running {{ inventory_hostname }} vm
+    virt:
+      name: "{{ inventory_hostname }}"
+      uri: qemu:///system
+      state: running
+
+  - name: Wait for first boot to finish and shutdown
+    virt:
+      name: "{{ inventory_hostname }}"
+      uri: qemu:///system
+      command: status
+    register: vmstatus
+    until: vmstatus.status == 'shutdown'
+    delay: 5
+    retries: 300
+
+  - name: ensure shutdown vm
+    virt:
+      name: "{{ inventory_hostname }}"
+      uri: qemu:///system
+      state: destroyed
+
+  - name: detach media
+    command: virsh detach-disk {{ inventory_hostname }} hdb --config
+
+  - name: detach ks media
+    command: virsh detach-disk {{ inventory_hostname }} hda --config
+
+  - name: create xml snippet to re-attach media
+    copy:
+      dest: "{{ libvirt_storage }}/{{ inventory_hostname }}.mediaattach.xml"
+      content: |
+        <disk type='file' device='cdrom'>
+          <driver name='qemu' type='raw'/>
+          <source file='{{ libvirt_storage }}/{{ rhel7_iso }}'/>
+          <target dev='hda' bus='ide'/>
+        </disk>
+
+  - name: attach media
+    command: virsh attach-device --domain {{ inventory_hostname }} --config {{ libvirt_storage }}/{{ inventory_hostname }}.mediaattach.xml
+    delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+
+  - name: ensure running vm
+    virt:
+      name: "{{ inventory_hostname }}"
+      uri: qemu:///system
+      state: running
+
+  - name: Checking for SSH on {{ hostvars[inventory_hostname].ansible_host | default(inventory_hostname) }}
+    wait_for: port=22 host="{{ hostvars[inventory_hostname].ansible_host | default(inventory_hostname) }}" search_regex=OpenSSH
+
   delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
   when: not (inventory_hostname in vmlist.list_vms)
 
-- name: Wait for first boot to finish and shutdown
-  virt:
-    name: "{{ inventory_hostname }}"
-    uri: qemu:///system
-    command: status
-  register: vmstatus
-  until: (inventory_hostname in vmlist.list_vms) or (vmstatus.status == 'shutdown')
-  delay: 5
-  retries: 300
-  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
-
-- name: ensure shutdown vm
-  virt:
-    name: "{{ inventory_hostname }}"
-    uri: qemu:///system
-    state: destroyed
-  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
-  when: not (inventory_hostname in vmlist.list_vms)
-
-- name: detach media
-  command: virsh detach-disk {{ inventory_hostname }} hdb --config
-  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
-  when: not inventory_hostname in vmlist.list_vms
-
-- name: detach ks media
-  command: virsh detach-disk {{ inventory_hostname }} hda --config
-  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
-  when: not inventory_hostname in vmlist.list_vms
-
-- name: create xml snippet to re-attach media
-  copy:
-    dest: /gluster/{{ gluster_libvirt_volume }}/{{ inventory_hostname }}.mediaattach.xml
-    content: |
-      <disk type='network' device='cdrom'>
-        <driver name='qemu' type='raw'/>
-        <source protocol='gluster' name='libvirt_gvol/CentOS-7-x86_64-DVD-1611.iso'>
-          <host name='localhost'/>
-        </source>
-        <target dev='hda' bus='ide'/>
-      </disk>
-  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
-
-- name: attach media
-  command: virsh attach-device --domain {{ inventory_hostname }} --config /gluster/{{ gluster_libvirt_volume }}/{{ inventory_hostname }}.isoattach.xml
-  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
-  when: not inventory_hostname in vmlist.list_vms
-
-- name: ensure running vm
-  virt:
-    name: "{{ inventory_hostname }}"
-    uri: qemu:///system
-    state: running
-  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
-
-- name: Checking for SSH on {{ hostvars[inventory_hostname].ansible_host | default(inventory_hostname) }}
-  wait_for: port=22 host="{{ hostvars[inventory_hostname].ansible_host | default(inventory_hostname) }}" search_regex=OpenSSH
-  delegate_to: "{{ hostvars[libvirt_host].ansible_host | default(libvirt_host) }}"
+- name: Connect via SSH once to capture new host key
+  command: ssh  -oStrictHostKeyChecking=no -oPasswordAuthentication=no {{ inventory_hostname }} echo hi
+  delegate_to: localhost
+  register: ssh_result
+  failed_when: ssh_result.rc!=0 and ssh_result.rc!=255

@@ -14,10 +14,10 @@ keyboard --vckeymap=us --xlayouts='us'
 lang en_US.UTF-8
 
 # Network information
-network  --device=eth0 --bootproto=dhcp --hostname={{ inventory_hostname }}
+network  --device=eth0 --bootproto=static --ip={{ ip4_cidr|ipaddr('address') }} --netmask={{ ip4_cidr|ipaddr('netmask') }} --gateway={{ ip4_gateway }} --nameserver={{ dns_server }} --hostname={{ inventory_hostname }}
 
 # Root password
-rootpw --iscrypted {{ root_passwd }}
+rootpw {{ root_passwd }}
 # System timezone
 timezone America/New_York --isUtc
 # System bootloader configuration
@@ -64,7 +64,9 @@ shutdown
 # Inject SSH key
 mkdir -m0700 /root/.ssh/
 cat <<EOF >/root/.ssh/authorized_keys
-{{ lookup('file', ansible_ssh_private_key_file | default('~/.ssh/id_rsa')) }}
+{{ lookup('file', ansible_ssh_public_key_file | default('~/.ssh/id_rsa.pub')) }}
 EOF
 chmod 0600 /root/.ssh/authorized_keys
 restorecon -R /root/.ssh/
+
+%end
